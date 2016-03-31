@@ -1,3 +1,11 @@
+
+--
+-- 创建数据库 thinkphp_rbac
+--
+CREATE DATABASE `thinkphp_rbac`
+CHARACTER SET 'utf8'
+COLLATE 'utf8_general_ci';
+
 CREATE TABLE IF NOT EXISTS `think_access` (
   `role_id` smallint(6) unsigned NOT NULL,
   `node_id` smallint(6) unsigned NOT NULL,
