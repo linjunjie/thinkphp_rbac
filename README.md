@@ -7,7 +7,7 @@ ThinkPHP官方RBAC示例的完善版本，基本上是一个傻瓜版本
 安装步骤:
 
 1. 登陆进入本地mysql库:
-    mysql -uroot -hlocalhost
+	mysql -uroot -hlocalhost
 
 2. 执行source rbac.sql
 

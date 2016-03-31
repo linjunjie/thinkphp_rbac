@@ -19,13 +19,6 @@
 class Cache {
 
     /**
-     * 是否连接
-     * @var string
-     * @access protected
-     */
-    protected $connected  ;
-
-    /**
      * 操作句柄
      * @var string
      * @access protected
@@ -50,13 +43,7 @@ class Cache {
         if(empty($type))  $type = C('DATA_CACHE_TYPE');
         $type  = strtolower(trim($type));
         $class = 'Cache'.ucwords($type);
-        if(is_file(CORE_PATH.'Driver/Cache/'.$class.'.class.php')) {
-            // 内置驱动
-            $path = CORE_PATH;
-        }else{ // 扩展驱动
-            $path = EXTEND_PATH;
-        }
-        if(require_cache($path.'Driver/Cache/'.$class.'.class.php'))
+        if(class_exists($class))
             $cache = new $class($options);
         else
             throw_exception(L('_CACHE_TYPE_INVALID_').':'.$type);
@@ -107,19 +94,34 @@ class Cache {
             'apc'   =>  array('apc_fetch','apc_store'),
         );
         $queue  =  isset($this->options['queue'])?$this->options['queue']:'file';
-        $fun    =  $_handler[$queue];
-        $value  =  $fun[0]('think_queue');
+        $fun    =  isset($_handler[$queue])?$_handler[$queue]:$_handler['file'];
+        $queue_name=isset($this->options['queue_name'])?$this->options['queue_name']:'think_queue';
+        $value  =  $fun[0]($queue_name);
         if(!$value) {
             $value   =  array();
         }
         // 进列
-        array_push($value,$key);
+        if(false===array_search($key, $value))  array_push($value,$key);
         if(count($value) > $this->options['length']) {
             // 出列
             $key =  array_shift($value);
             // 删除缓存
             $this->rm($key);
+             if(APP_DEUBG){
+                //调试模式下，记录出列次数
+                N($queue_name.'_out_times',1,true);
+            }
         }
-        return $fun[1]('think_queue',$value);
+        return $fun[1]($queue_name,$value);
+    }
+    
+    public function __call($method,$args){
+        //调用缓存类型自己的方法
+        if(method_exists($this->handler, $method)){
+           return call_user_func_array(array($this->handler,$method), $args);
+        }else{
+            throw_exception(__CLASS__.':'.$method.L('_METHOD_NOT_EXIST_'));
+            return;
+        }
     }
 }

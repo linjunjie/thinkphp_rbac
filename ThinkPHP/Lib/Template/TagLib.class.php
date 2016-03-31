@@ -89,9 +89,16 @@ class TagLib {
         $array  =   array_change_key_case($xml['@attributes']);
         if($array) {
             $attrs  = explode(',',$this->tags[strtolower($tag)]['attr']);
+            if(isset($this->tags[strtolower($tag)]['must'])){
+                $must   =   explode(',',$this->tags[strtolower($tag)]['must']);
+            }else{
+                $must   =   array();
+            }
             foreach($attrs as $name) {
                 if( isset($array[$name])) {
                     $array[$name] = str_replace('___','&',$array[$name]);
+                }elseif(false !== array_search($name,$must)){
+                    throw_exception(L('_PARAM_ERROR_').':'.$name);
                 }
             }
             return $array;
@@ -109,14 +116,16 @@ class TagLib {
         $condition = preg_replace('/\$(\w+):(\w+)\s/is','$\\1->\\2 ',$condition);
         switch(strtolower(C('TMPL_VAR_IDENTIFY'))) {
             case 'array': // 识别为数组
-                $condition = preg_replace('/\$(\w+)\.(\w+)\s/is','$\\1["\\2"] ',$condition);
+                $condition  =   preg_replace('/\$(\w+)\.(\w+)\s/is','$\\1["\\2"] ',$condition);
                 break;
             case 'obj':  // 识别为对象
-                $condition = preg_replace('/\$(\w+)\.(\w+)\s/is','$\\1->\\2 ',$condition);
+                $condition  =   preg_replace('/\$(\w+)\.(\w+)\s/is','$\\1->\\2 ',$condition);
                 break;
             default:  // 自动判断数组或对象 只支持二维
-                $condition = preg_replace('/\$(\w+)\.(\w+)\s/is','(is_array($\\1)?$\\1["\\2"]:$\\1->\\2) ',$condition);
+                $condition  =   preg_replace('/\$(\w+)\.(\w+)\s/is','(is_array($\\1)?$\\1["\\2"]:$\\1->\\2) ',$condition);
         }
+        if(false !== strpos($condition, '$Think'))
+            $condition      =   preg_replace('/(\$Think.*?)\s/ies',"\$this->parseThinkVar('\\1');" , $condition);        
         return $condition;
     }
 

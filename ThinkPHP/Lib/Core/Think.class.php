@@ -47,18 +47,16 @@ class Think {
      * @return string
      */
     static private function buildApp() {
-        // 加载底层惯例配置文件
-        C(include THINK_PATH.'Conf/convention.php');
-
+        
         // 读取运行模式
-        if(defined('MODE_NAME')) { // 模式的设置并入核心模式
+        if(defined('MODE_NAME')) { // 读取模式的设置
             $mode   = include MODE_PATH.strtolower(MODE_NAME).'.php';
         }else{
             $mode   =  array();
         }
-
-        // 加载模式配置文件
-        if(isset($mode['config'])) {
+        // 加载核心惯例配置文件
+        C(include THINK_PATH.'Conf/convention.php');
+        if(isset($mode['config'])) {// 加载模式配置文件
             C( is_array($mode['config'])?$mode['config']:include $mode['config'] );
         }
 
@@ -89,7 +87,7 @@ class Think {
         $compile   = '';
         // 读取核心编译文件列表
         if(isset($mode['core'])) {
-            $list   =  $mode['core'];
+            $list  =  $mode['core'];
         }else{
             $list  =  array(
                 THINK_PATH.'Common/functions.php', // 标准模式函数库
@@ -122,8 +120,9 @@ class Think {
         if(isset($mode['alias'])) {
             $alias = is_array($mode['alias'])?$mode['alias']:include $mode['alias'];
             alias_import($alias);
-            if(!APP_DEBUG) $compile .= 'alias_import('.var_export($alias,true).');';
+            if(!APP_DEBUG) $compile .= 'alias_import('.var_export($alias,true).');';               
         }
+     
         // 加载项目别名定义
         if(is_file(CONF_PATH.'alias.php')){ 
             $alias = include CONF_PATH.'alias.php';
@@ -157,24 +156,54 @@ class Think {
     public static function autoload($class) {
         // 检查是否存在别名定义
         if(alias_import($class)) return ;
-
+        $libPath    =   defined('BASE_LIB_PATH')?BASE_LIB_PATH:LIB_PATH;
+        $group      =   defined('GROUP_NAME') && C('APP_GROUP_MODE')==0 ?GROUP_NAME.'/':'';
+        $file       =   $class.'.class.php';
         if(substr($class,-8)=='Behavior') { // 加载行为
-            if(require_cache(CORE_PATH.'Behavior/'.$class.'.class.php') 
-                || require_cache(EXTEND_PATH.'Behavior/'.$class.'.class.php') 
-                || require_cache(LIB_PATH.'Behavior/'.$class.'.class.php')
-                || (defined('MODE_NAME') && require_cache(MODE_PATH.ucwords(MODE_NAME).'/Behavior/'.$class.'.class.php'))) {
+            if(require_array(array(
+                CORE_PATH.'Behavior/'.$file,
+                EXTEND_PATH.'Behavior/'.$file,
+                LIB_PATH.'Behavior/'.$file,
+                $libPath.'Behavior/'.$file),true)
+                || (defined('MODE_NAME') && require_cache(MODE_PATH.ucwords(MODE_NAME).'/Behavior/'.$file))) {
                 return ;
             }
         }elseif(substr($class,-5)=='Model'){ // 加载模型
-            if((defined('GROUP_NAME') && require_cache(LIB_PATH.'Model/'.GROUP_NAME.'/'.$class.'.class.php'))
-                || require_cache(LIB_PATH.'Model/'.$class.'.class.php')
-                || require_cache(EXTEND_PATH.'Model/'.$class.'.class.php') ) {
+            if(require_array(array(
+                LIB_PATH.'Model/'.$group.$file,
+                $libPath.'Model/'.$file,
+                EXTEND_PATH.'Model/'.$file),true)) {
                 return ;
             }
         }elseif(substr($class,-6)=='Action'){ // 加载控制器
-            if((defined('GROUP_NAME') && require_cache(LIB_PATH.'Action/'.GROUP_NAME.'/'.$class.'.class.php'))
-                || require_cache(LIB_PATH.'Action/'.$class.'.class.php')
-                || require_cache(EXTEND_PATH.'Action/'.$class.'.class.php') ) {
+            if(require_array(array(
+                LIB_PATH.'Action/'.$group.$file,
+                $libPath.'Action/'.$file,
+                EXTEND_PATH.'Action/'.$file),true)) {
+                return ;
+            }
+        }elseif(substr($class,0,5)=='Cache'){ // 加载缓存驱动
+            if(require_array(array(
+                EXTEND_PATH.'Driver/Cache/'.$file,
+                CORE_PATH.'Driver/Cache/'.$file),true)){
+                return ;
+            }
+        }elseif(substr($class,0,2)=='Db'){ // 加载数据库驱动
+            if(require_array(array(
+                EXTEND_PATH.'Driver/Db/'.$file,
+                CORE_PATH.'Driver/Db/'.$file),true)){
+                return ;
+            }
+        }elseif(substr($class,0,8)=='Template'){ // 加载模板引擎驱动
+            if(require_array(array(
+                EXTEND_PATH.'Driver/Template/'.$file,
+                CORE_PATH.'Driver/Template/'.$file),true)){
+                return ;
+            }
+        }elseif(substr($class,0,6)=='TagLib'){ // 加载标签库驱动
+            if(require_array(array(
+                EXTEND_PATH.'Driver/TagLib/'.$file,
+                CORE_PATH.'Driver/TagLib/'.$file),true)) {
                 return ;
             }
         }
@@ -216,7 +245,18 @@ class Think {
      * @param mixed $e 异常对象
      */
     static public function appException($e) {
-        halt($e->__toString());
+        $error = array();
+        $error['message']   = $e->getMessage();
+        $trace  =   $e->getTrace();
+        if('throw_exception'==$trace[0]['function']) {
+            $error['file']  =   $trace[0]['file'];
+            $error['line']  =   $trace[0]['line'];
+        }else{
+            $error['file']      = $e->getFile();
+            $error['line']      = $e->getLine();
+        }
+        Log::record($error['message'],Log::ERR);
+        halt($error);
     }
 
     /**
@@ -236,7 +276,11 @@ class Think {
           case E_COMPILE_ERROR:
           case E_USER_ERROR:
             ob_end_clean();
-            if(!ini_get('zlib.output_compression') && C('OUTPUT_ENCODE')) ob_start('ob_gzhandler');
+            // 页面压缩输出支持
+            if(C('OUTPUT_ENCODE')){
+                $zlib = ini_get('zlib.output_compression');
+                if(empty($zlib)) ob_start('ob_gzhandler');
+            }
             $errorStr = "$errstr ".$errfile." 第 $errline 行.";
             if(C('LOG_RECORD')) Log::write("[$errno] ".$errorStr,Log::ERR);
             function_exists('halt')?halt($errorStr):exit('ERROR:'.$errorStr);
@@ -253,8 +297,19 @@ class Think {
     
     // 致命错误捕获
     static public function fatalError() {
+        // 保存日志记录
+        if(C('LOG_RECORD')) Log::save();
         if ($e = error_get_last()) {
-            Think::appError($e['type'],$e['message'],$e['file'],$e['line']);
+            switch($e['type']){
+              case E_ERROR:
+              case E_PARSE:
+              case E_CORE_ERROR:
+              case E_COMPILE_ERROR:
+              case E_USER_ERROR:  
+                ob_end_clean();
+                function_exists('halt')?halt($e):exit('ERROR:'.$e['message']);
+                break;
+            }
         }
     }
 

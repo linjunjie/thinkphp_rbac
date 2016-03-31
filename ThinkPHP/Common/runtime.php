@@ -19,14 +19,14 @@ defined('THINK_PATH') or exit();
 if(version_compare(PHP_VERSION,'5.2.0','<'))  die('require PHP > 5.2.0 !');
 
 //  版本信息
-define('THINK_VERSION', '3.1');
+define('THINK_VERSION', '3.1.3');
 
 //   系统信息
-if(version_compare(PHP_VERSION,'5.3.0','<')) {
-    set_magic_quotes_runtime(0);
+if(version_compare(PHP_VERSION,'5.4.0','<')) {
+    ini_set('magic_quotes_runtime',0);
     define('MAGIC_QUOTES_GPC',get_magic_quotes_gpc()?True:False);
 }else{
-    define('MAGIC_QUOTES_GPC',True);
+    define('MAGIC_QUOTES_GPC',false);
 }
 define('IS_CGI',substr(PHP_SAPI, 0,3)=='cgi' ? 1 : 0 );
 define('IS_WIN',strstr(PHP_OS, 'WIN') ? 1 : 0 );
@@ -76,7 +76,7 @@ defined('CONF_PATH')    or define('CONF_PATH',      APP_PATH.'Conf/'); // 项目
 defined('LANG_PATH')    or define('LANG_PATH',      APP_PATH.'Lang/'); // 项目语言包目录
 defined('TMPL_PATH')    or define('TMPL_PATH',      APP_PATH.'Tpl/'); // 项目模板目录
 defined('HTML_PATH')    or define('HTML_PATH',      APP_PATH.'Html/'); // 项目静态目录
-defined('LOG_PATH')     or define('LOG_PATH',       RUNTIME_PATH.'Logs/'); // 项目日志目录
+defined('LOG_PATH')     or define('LOG_PATH',       realpath(RUNTIME_PATH).'/Logs/'); // 项目日志目录
 defined('TEMP_PATH')    or define('TEMP_PATH',      RUNTIME_PATH.'Temp/'); // 项目缓存目录
 defined('DATA_PATH')    or define('DATA_PATH',      RUNTIME_PATH.'Data/'); // 项目数据目录
 defined('CACHE_PATH')   or define('CACHE_PATH',     RUNTIME_PATH.'Cache/'); // 项目模板缓存目录
@@ -88,7 +88,7 @@ set_include_path(get_include_path() . PATH_SEPARATOR . VENDOR_PATH);
 function load_runtime_file() {
     // 加载系统基础函数库
     require THINK_PATH.'Common/common.php';
-    // 读取核心编译文件列表
+    // 读取核心文件列表
     $list = array(
         CORE_PATH.'Core/Think.class.php',
         CORE_PATH.'Core/ThinkException.class.php',  // 异常处理类
@@ -123,9 +123,9 @@ function check_runtime() {
         exit('目录 [ '.RUNTIME_PATH.' ] 不可写！');
     }
     mkdir(CACHE_PATH);  // 模板缓存目录
-    if(!is_dir(LOG_PATH))	mkdir(LOG_PATH);    // 日志目录
-    if(!is_dir(TEMP_PATH))  mkdir(TEMP_PATH);	// 数据缓存目录
-    if(!is_dir(DATA_PATH))	mkdir(DATA_PATH);	// 数据文件目录
+    if(!is_dir(LOG_PATH))   mkdir(LOG_PATH);    // 日志目录
+    if(!is_dir(TEMP_PATH))  mkdir(TEMP_PATH);   // 数据缓存目录
+    if(!is_dir(DATA_PATH))  mkdir(DATA_PATH);   // 数据文件目录
     return true;
 }
 
@@ -152,14 +152,13 @@ function build_runtime_cache($append='') {
         $content .= compile($file);
     }
     // 系统行为扩展文件统一编译
-    if(C('APP_TAGS_ON')) {
-        $content .= build_tags_cache();
-    }
+    $content .= build_tags_cache();
+    
     $alias      = include THINK_PATH.'Conf/alias.php';
     $content   .= 'alias_import('.var_export($alias,true).');';
     // 编译框架默认语言包和配置参数
     $content   .= $append."\nL(".var_export(L(),true).");C(".var_export(C(),true).');G(\'loadTime\');Think::Start();';
-    file_put_contents(RUNTIME_FILE,strip_whitespace('<?php '.$content));
+    file_put_contents(RUNTIME_FILE,strip_whitespace('<?php '.str_replace("defined('THINK_PATH') or exit();",' ',$content)));
 }
 
 // 编译系统行为扩展类库
@@ -177,7 +176,7 @@ function build_tags_cache() {
 // 创建项目目录结构
 function build_app_dir() {
     // 没有创建项目目录的话自动创建
-    if(!is_dir(APP_PATH)) mkdir(APP_PATH,0777,true);
+    if(!is_dir(APP_PATH)) mkdir(APP_PATH,0755,true);
     if(is_writeable(APP_PATH)) {
         $dirs  = array(
             LIB_PATH,
@@ -197,7 +196,7 @@ function build_app_dir() {
             LIB_PATH.'Widget/',
             );
         foreach ($dirs as $dir){
-            if(!is_dir($dir))  mkdir($dir,0777,true);
+            if(!is_dir($dir))  mkdir($dir,0755,true);
         }
         // 写入目录安全文件
         build_dir_secure($dirs);

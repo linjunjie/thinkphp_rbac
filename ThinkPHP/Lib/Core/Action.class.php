@@ -33,13 +33,6 @@ abstract class Action {
     private   $name     =  '';
 
     /**
-     * 模板变量
-     * @var tVar
-     * @access protected
-     */      
-    protected $tVar     =   array();
-
-    /**
      * 控制器参数
      * @var config
      * @access protected
@@ -52,6 +45,8 @@ abstract class Action {
      */
     public function __construct() {
         tag('action_begin',$this->config);
+        //实例化视图类
+        $this->view     = Think::instance('View');           
         //控制器初始化
         if(method_exists($this,'_initialize'))
             $this->_initialize();
@@ -93,11 +88,11 @@ abstract class Action {
      * @param string $charset 输出编码
      * @param string $contentType 输出类型
      * @param string $content 输出内容
+     * @param string $prefix 模板缓存前缀
      * @return void
      */
-    protected function display($templateFile='',$charset='',$contentType='',$content='') {
-        $this->initView();
-        $this->view->display($templateFile,$charset,$contentType,$content);
+    protected function display($templateFile='',$charset='',$contentType='',$content='',$prefix='') {
+        $this->view->display($templateFile,$charset,$contentType,$content,$prefix);
     }
 
     /**
@@ -106,11 +101,11 @@ abstract class Action {
      * @param string $content 输出内容
      * @param string $charset 模板输出字符集
      * @param string $contentType 输出类型
+     * @param string $prefix 模板缓存前缀
      * @return mixed
      */
-    protected function show($content,$charset='',$contentType='') {
-        $this->initView();       
-        $this->view->display('',$charset,$contentType,$content);
+    protected function show($content,$charset='',$contentType='',$prefix='') {
+        $this->view->display('',$charset,$contentType,$content,$prefix);
     }
 
     /**
@@ -119,25 +114,14 @@ abstract class Action {
      * @access protected
      * @param string $templateFile 指定要调用的模板文件
      * 默认为空 由系统自动定位模板文件
+     * @param string $content 模板输出内容
+     * @param string $prefix 模板缓存前缀* 
      * @return string
      */
-    protected function fetch($templateFile='') {
-        $this->initView();
-        return $this->view->fetch($templateFile);
+    protected function fetch($templateFile='',$content='',$prefix='') {
+        return $this->view->fetch($templateFile,$content,$prefix);
     }
 
-    /**
-     * 初始化视图
-     * @access private
-     * @return void
-     */
-    private function initView(){
-        //实例化视图类
-        if(!$this->view)    $this->view     = Think::instance('View');
-        // 模板变量传值
-        if($this->tVar)     $this->view->assign($this->tVar);           
-    }
-    
     /**
      *  创建静态页面
      * @access protected
@@ -153,10 +137,21 @@ abstract class Action {
         $htmlfile =  $htmlpath.$htmlfile.C('HTML_FILE_SUFFIX');
         if(!is_dir(dirname($htmlfile)))
             // 如果静态目录不存在 则创建
-            mkdir(dirname($htmlfile),0777,true);
+            mkdir(dirname($htmlfile),0755,true);
         if(false === file_put_contents($htmlfile,$content))
             throw_exception(L('_CACHE_WRITE_ERROR_').':'.$htmlfile);
         return $content;
+    }
+
+    /**
+     * 模板主题设置
+     * @access protected
+     * @param string $theme 模版主题
+     * @return Action
+     */
+    protected function theme($theme){
+        $this->view->theme($theme);
+        return $this;
     }
 
     /**
@@ -164,14 +159,11 @@ abstract class Action {
      * @access protected
      * @param mixed $name 要显示的模板变量
      * @param mixed $value 变量的值
-     * @return void
+     * @return Action
      */
     protected function assign($name,$value='') {
-        if(is_array($name)) {
-            $this->tVar   =  array_merge($this->tVar,$name);
-        }else {
-            $this->tVar[$name] = $value;
-        }        
+        $this->view->assign($name,$value);
+        return $this;
     }
 
     public function __set($name,$value) {
@@ -185,13 +177,20 @@ abstract class Action {
      * @return mixed
      */
     public function get($name='') {
-        if('' === $name) {
-            return $this->tVar;
-        }
-        return isset($this->tVar[$name])?$this->tVar[$name]:false;        
+        return $this->view->get($name);      
     }
 
     public function __get($name) {
+        return $this->get($name);
+    }
+
+    /**
+     * 检测模板变量的值
+     * @access public
+     * @param string $name 名称
+     * @return boolean
+     */
+    public function __isset($name) {
         return $this->get($name);
     }
 
@@ -207,7 +206,7 @@ abstract class Action {
             if(method_exists($this,'_empty')) {
                 // 如果定义了_empty操作 则调用
                 $this->_empty($method,$args);
-            }elseif(file_exists_case(C('TEMPLATE_NAME'))){
+            }elseif(file_exists_case($this->view->parseTemplate())){
                 // 检查是否存在默认模版 如果有直接输出模版
                 $this->display();
             }elseif(function_exists('__hack_action')) {
@@ -240,9 +239,8 @@ abstract class Action {
                         default:
                             $input  =  $_GET;
                     }
-                    if(C('VAR_URL_PARAMS')){
-                        $params = $_GET[C('VAR_URL_PARAMS')];
-                        $input  =   array_merge($input,$params);
+                    if(C('VAR_URL_PARAMS') && isset($_GET[C('VAR_URL_PARAMS')])){
+                        $input  =   array_merge($input,$_GET[C('VAR_URL_PARAMS')]);
                     }
                     break;
                 case '_request' :   $input =& $_REQUEST;   break;
@@ -269,6 +267,7 @@ abstract class Action {
             }else{ // 变量默认值
                 $data       =	 isset($args[2])?$args[2]:NULL;
             }
+            Log::record('建议使用I方法替代'.$method,Log::NOTICE);
             return $data;
         }
     }
@@ -278,10 +277,10 @@ abstract class Action {
      * @access protected
      * @param string $message 错误信息
      * @param string $jumpUrl 页面跳转地址
-     * @param Boolean|array $ajax 是否为Ajax方式
+     * @param mixed $ajax 是否为Ajax方式 当数字时指定跳转时间
      * @return void
      */
-    protected function error($message,$jumpUrl='',$ajax=false) {
+    protected function error($message='',$jumpUrl='',$ajax=false) {
         $this->dispatchJump($message,0,$jumpUrl,$ajax);
     }
 
@@ -290,10 +289,10 @@ abstract class Action {
      * @access protected
      * @param string $message 提示信息
      * @param string $jumpUrl 页面跳转地址
-     * @param Boolean|array $ajax 是否为Ajax方式
+     * @param mixed $ajax 是否为Ajax方式 当数字时指定跳转时间
      * @return void
      */
-    protected function success($message,$jumpUrl='',$ajax=false) {
+    protected function success($message='',$jumpUrl='',$ajax=false) {
         $this->dispatchJump($message,1,$jumpUrl,$ajax);
     }
 
@@ -316,20 +315,27 @@ abstract class Action {
             $type           =   $args?array_shift($args):'';
         }
         if(empty($type)) $type  =   C('DEFAULT_AJAX_RETURN');
-        if(strtoupper($type)=='JSON') {
-            // 返回JSON数据格式到客户端 包含状态信息
-            header('Content-Type:text/html; charset=utf-8');
-            exit(json_encode($data));
-        }elseif(strtoupper($type)=='XML'){
-            // 返回xml格式数据
-            header('Content-Type:text/xml; charset=utf-8');
-            exit(xml_encode($data));
-        }elseif(strtoupper($type)=='EVAL'){
-            // 返回可执行的js脚本
-            header('Content-Type:text/html; charset=utf-8');
-            exit($data);
-        }else{
-            // TODO 增加其它格式
+        switch (strtoupper($type)){
+            case 'JSON' :
+                // 返回JSON数据格式到客户端 包含状态信息
+                header('Content-Type:application/json; charset=utf-8');
+                exit(json_encode($data));
+            case 'XML'  :
+                // 返回xml格式数据
+                header('Content-Type:text/xml; charset=utf-8');
+                exit(xml_encode($data));
+            case 'JSONP':
+                // 返回JSON数据格式到客户端 包含状态信息
+                header('Content-Type:application/json; charset=utf-8');
+                $handler  =   isset($_GET[C('VAR_JSONP_HANDLER')]) ? $_GET[C('VAR_JSONP_HANDLER')] : C('DEFAULT_JSONP_HANDLER');
+                exit($handler.'('.json_encode($data).');');  
+            case 'EVAL' :
+                // 返回可执行的js脚本
+                header('Content-Type:text/html; charset=utf-8');
+                exit($data);            
+            default     :
+                // 用于扩展其他返回格式数据
+                tag('ajax_return',$data);
         }
     }
 
@@ -354,18 +360,19 @@ abstract class Action {
      * @param string $message 提示信息
      * @param Boolean $status 状态
      * @param string $jumpUrl 页面跳转地址
-     * @param Boolean|array $ajax 是否为Ajax方式
+     * @param mixed $ajax 是否为Ajax方式 当数字时指定跳转时间
      * @access private
      * @return void
      */
     private function dispatchJump($message,$status=1,$jumpUrl='',$ajax=false) {
-        if($ajax || $this->isAjax()) {// AJAX提交
-            $data           =   is_array($ajax)?$ajax:$this->get();
+        if(true === $ajax || IS_AJAX) {// AJAX提交
+            $data           =   is_array($ajax)?$ajax:array();
             $data['info']   =   $message;
             $data['status'] =   $status;
             $data['url']    =   $jumpUrl;
             $this->ajaxReturn($data);
         }
+        if(is_int($ajax)) $this->assign('waitSecond',$ajax);
         if(!empty($jumpUrl)) $this->assign('jumpUrl',$jumpUrl);
         // 提示标题
         $this->assign('msgTitle',$status? L('_OPERATION_SUCCESS_') : L('_OPERATION_FAIL_'));
@@ -377,16 +384,16 @@ abstract class Action {
         if($status) { //发送成功信息
             $this->assign('message',$message);// 提示信息
             // 成功操作后默认停留1秒
-            if(!$this->get('waitSecond'))    $this->assign('waitSecond','1');
+            if(!isset($this->waitSecond))    $this->assign('waitSecond','1');
             // 默认操作成功自动返回操作前页面
-            if(!$this->get('jumpUrl')) $this->assign("jumpUrl",$_SERVER["HTTP_REFERER"]);
+            if(!isset($this->jumpUrl)) $this->assign("jumpUrl",$_SERVER["HTTP_REFERER"]);
             $this->display(C('TMPL_ACTION_SUCCESS'));
         }else{
             $this->assign('error',$message);// 提示信息
             //发生错误时候默认停留3秒
-            if(!$this->get('waitSecond'))    $this->assign('waitSecond','3');
+            if(!isset($this->waitSecond))    $this->assign('waitSecond','3');
             // 默认发生错误的话自动返回上页
-            if(!$this->get('jumpUrl')) $this->assign('jumpUrl',"javascript:history.back(-1);");
+            if(!isset($this->jumpUrl)) $this->assign('jumpUrl',"javascript:history.back(-1);");
             $this->display(C('TMPL_ACTION_ERROR'));
             // 中止执行  避免出错后继续执行
             exit ;
@@ -398,8 +405,6 @@ abstract class Action {
      * @access public
      */
     public function __destruct() {
-        // 保存日志
-        if(C('LOG_RECORD')) Log::save();
         // 执行后续操作
         tag('action_end');
     }

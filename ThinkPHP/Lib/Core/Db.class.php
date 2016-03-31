@@ -51,7 +51,9 @@ class Db {
     // 数据库表达式
     protected $comparison = array('eq'=>'=','neq'=>'<>','gt'=>'>','egt'=>'>=','lt'=>'<','elt'=>'<=','notlike'=>'NOT LIKE','like'=>'LIKE','in'=>'IN','notin'=>'NOT IN');
     // 查询表达式
-    protected $selectSql  = 'SELECT%DISTINCT% %FIELD% FROM %TABLE%%JOIN%%WHERE%%GROUP%%HAVING%%ORDER%%LIMIT% %UNION%';
+    protected $selectSql  = 'SELECT%DISTINCT% %FIELD% FROM %TABLE%%JOIN%%WHERE%%GROUP%%HAVING%%ORDER%%LIMIT% %UNION%%COMMENT%';
+    // 参数绑定
+    protected $bind       = array();
 
     /**
      * 取得数据库类实例
@@ -78,14 +80,8 @@ class Db {
         // 数据库类型
         $this->dbType = ucwords(strtolower($db_config['dbms']));
         $class = 'Db'. $this->dbType;
-        if(is_file(CORE_PATH.'Driver/Db/'.$class.'.class.php')) {
-            // 内置驱动
-            $path = CORE_PATH;
-        }else{ // 扩展驱动
-            $path = EXTEND_PATH;
-        }
         // 检查驱动类
-        if(require_cache($path.'Driver/Db/'.$class.'.class.php')) {
+        if(class_exists($class)) {
             $db = new $class($db_config);
             // 获取当前的数据库类型
             if( 'pdo' != strtolower($db_config['dbms']) )
@@ -282,11 +278,42 @@ class Db {
      */
     protected function parseSet($data) {
         foreach ($data as $key=>$val){
-            $value   =  $this->parseValue($val);
-            if(is_scalar($value)) // 过滤非标量数据
-                $set[]    = $this->parseKey($key).'='.$value;
+            if(is_array($val) && 'exp' == $val[0]){
+                $set[]  =   $this->parseKey($key).'='.$val[1];
+            }elseif(is_scalar($val)) { // 过滤非标量数据
+              if(C('DB_BIND_PARAM') && 0 !== strpos($val,':')){
+                $name   =   md5($key);
+                $set[]  =   $this->parseKey($key).'=:'.$name;
+                $this->bindParam($name,$val);
+              }else{
+                $set[]  =   $this->parseKey($key).'='.$this->parseValue($val);
+              }
+            }
         }
         return ' SET '.implode(',',$set);
+    }
+
+     /**
+     * 参数绑定
+     * @access protected
+     * @param string $name 绑定参数名
+     * @param mixed $value 绑定值
+     * @return void
+     */
+    protected function bindParam($name,$value){
+        $this->bind[':'.$name]  =   $value;
+    }
+
+     /**
+     * 参数绑定分析
+     * @access protected
+     * @param array $bind
+     * @return array
+     */
+    protected function parseBind($bind){
+        $bind           =   array_merge($this->bind,$bind);
+        $this->bind     =   array();
+        return $bind;
     }
 
     /**
@@ -384,10 +411,11 @@ class Db {
         if(is_string($where)) {
             // 直接使用字符串条件
             $whereStr = $where;
-        }else{ // 使用数组或者对象条件表达式
-            if(isset($where['_logic'])) {
+        }else{ // 使用数组表达式
+            $operate  = isset($where['_logic'])?strtoupper($where['_logic']):'';
+            if(in_array($operate,array('AND','OR','XOR'))){
                 // 定义逻辑运算规则 例如 OR XOR AND NOT
-                $operate    =   ' '.strtoupper($where['_logic']).' ';
+                $operate    =   ' '.$operate.' ';
                 unset($where['_logic']);
             }else{
                 // 默认进行 AND 运算
@@ -395,6 +423,9 @@ class Db {
             }
             foreach ($where as $key=>$val){
                 $whereStr .= '( ';
+                if(is_numeric($key)){
+                    $key  = '_complex';
+                }                    
                 if(0===strpos($key,'_')) {
                     // 解析特殊条件表达式
                     $whereStr   .= $this->parseThinkWhere($key,$val);
@@ -443,12 +474,14 @@ class Db {
                 }elseif(preg_match('/^(NOTLIKE|LIKE)$/i',$val[0])){// 模糊查找
                     if(is_array($val[1])) {
                         $likeLogic  =   isset($val[2])?strtoupper($val[2]):'OR';
-                        $likeStr    =   $this->comparison[strtolower($val[0])];
-                        $like       =   array();
-                        foreach ($val[1] as $item){
-                            $like[] = $key.' '.$likeStr.' '.$this->parseValue($item);
+                        if(in_array($likeLogic,array('AND','OR','XOR'))){
+                            $likeStr    =   $this->comparison[strtolower($val[0])];
+                            $like       =   array();
+                            foreach ($val[1] as $item){
+                                $like[] = $key.' '.$likeStr.' '.$this->parseValue($item);
+                            }
+                            $whereStr .= '('.implode(' '.$likeLogic.' ',$like).')';                          
                         }
-                        $whereStr .= '('.implode(' '.$likeLogic.' ',$like).')';
                     }else{
                         $whereStr .= $key.' '.$this->comparison[strtolower($val[0])].' '.$this->parseValue($val[1]);
                     }
@@ -472,8 +505,8 @@ class Db {
                 }
             }else {
                 $count = count($val);
-                if(in_array(strtoupper(trim($val[$count-1])),array('AND','OR','XOR'))) {
-                    $rule   = strtoupper(trim($val[$count-1]));
+                $rule  = isset($val[$count-1])?strtoupper($val[$count-1]):'';
+                if(in_array($rule,array('AND','OR','XOR'))) {
                     $count  = $count -1;
                 }else{
                     $rule   = 'AND';
@@ -517,7 +550,7 @@ class Db {
                 break;
             case '_complex':
                 // 复合查询条件
-                $whereStr = substr($this->parseWhere($val),6);
+                $whereStr   =   is_string($val)? $val : substr($this->parseWhere($val),6);
                 break;
             case '_query':
                 // 字符串模式查询条件
@@ -614,6 +647,16 @@ class Db {
     }
 
     /**
+     * comment分析
+     * @access protected
+     * @param string $comment
+     * @return string
+     */
+    protected function parseComment($comment) {
+        return  !empty($comment)?   ' /* '.$comment.' */':'';
+    }
+
+    /**
      * distinct分析
      * @access protected
      * @param mixed $distinct
@@ -655,15 +698,24 @@ class Db {
         $values  =  $fields    = array();
         $this->model  =   $options['model'];
         foreach ($data as $key=>$val){
-            $value   =  $this->parseValue($val);
-            if(is_scalar($value)) { // 过滤非标量数据
-                $values[]   =  $value;
+            if(is_array($val) && 'exp' == $val[0]){
                 $fields[]   =  $this->parseKey($key);
+                $values[]   =  $val[1];
+            }elseif(is_scalar($val)) { // 过滤非标量数据
+              $fields[]   =  $this->parseKey($key);
+              if(C('DB_BIND_PARAM') && 0 !== strpos($val,':')){
+                $name       =   md5($key);
+                $values[]   =   ':'.$name;
+                $this->bindParam($name,$val);
+              }else{
+                $values[]   =  $this->parseValue($val);
+              }                
             }
         }
         $sql   =  ($replace?'REPLACE':'INSERT').' INTO '.$this->parseTable($options['table']).' ('.implode(',', $fields).') VALUES ('.implode(',', $values).')';
         $sql   .= $this->parseLock(isset($options['lock'])?$options['lock']:false);
-        return $this->execute($sql);
+        $sql   .= $this->parseComment(!empty($options['comment'])?$options['comment']:'');
+        return $this->execute($sql,$this->parseBind(!empty($options['bind'])?$options['bind']:array()));
     }
 
     /**
@@ -680,7 +732,7 @@ class Db {
         array_walk($fields, array($this, 'parseKey'));
         $sql   =    'INSERT INTO '.$this->parseTable($table).' ('.implode(',', $fields).') ';
         $sql   .= $this->buildSelectSql($options);
-        return $this->execute($sql);
+        return $this->execute($sql,$this->parseBind(!empty($options['bind'])?$options['bind']:array()));
     }
 
     /**
@@ -695,11 +747,12 @@ class Db {
         $sql   = 'UPDATE '
             .$this->parseTable($options['table'])
             .$this->parseSet($data)
-            .$this->parseWhere(isset($options['where'])?$options['where']:'')
-            .$this->parseOrder(isset($options['order'])?$options['order']:'')
-            .$this->parseLimit(isset($options['limit'])?$options['limit']:'')
-            .$this->parseLock(isset($options['lock'])?$options['lock']:false);
-        return $this->execute($sql);
+            .$this->parseWhere(!empty($options['where'])?$options['where']:'')
+            .$this->parseOrder(!empty($options['order'])?$options['order']:'')
+            .$this->parseLimit(!empty($options['limit'])?$options['limit']:'')
+            .$this->parseLock(isset($options['lock'])?$options['lock']:false)
+            .$this->parseComment(!empty($options['comment'])?$options['comment']:'');
+        return $this->execute($sql,$this->parseBind(!empty($options['bind'])?$options['bind']:array()));
     }
 
     /**
@@ -712,11 +765,12 @@ class Db {
         $this->model  =   $options['model'];
         $sql   = 'DELETE FROM '
             .$this->parseTable($options['table'])
-            .$this->parseWhere(isset($options['where'])?$options['where']:'')
-            .$this->parseOrder(isset($options['order'])?$options['order']:'')
-            .$this->parseLimit(isset($options['limit'])?$options['limit']:'')
-            .$this->parseLock(isset($options['lock'])?$options['lock']:false);
-        return $this->execute($sql);
+            .$this->parseWhere(!empty($options['where'])?$options['where']:'')
+            .$this->parseOrder(!empty($options['order'])?$options['order']:'')
+            .$this->parseLimit(!empty($options['limit'])?$options['limit']:'')
+            .$this->parseLock(isset($options['lock'])?$options['lock']:false)
+            .$this->parseComment(!empty($options['comment'])?$options['comment']:'');
+        return $this->execute($sql,$this->parseBind(!empty($options['bind'])?$options['bind']:array()));
     }
 
     /**
@@ -731,14 +785,14 @@ class Db {
         $cache  =  isset($options['cache'])?$options['cache']:false;
         if($cache) { // 查询缓存检测
             $key    =  is_string($cache['key'])?$cache['key']:md5($sql);
-            $value  =  S($key,'','',$cache['type']);
+            $value  =  S($key,'',$cache);
             if(false !== $value) {
                 return $value;
             }
         }
-        $result   = $this->query($sql);
+        $result   = $this->query($sql,$this->parseBind(!empty($options['bind'])?$options['bind']:array()));
         if($cache && false !== $result ) { // 查询缓存写入
-            S($key,$result,$cache['expire'],$cache['type']);
+            S($key,$result,$cache);
         }
         return $result;
     }
@@ -772,7 +826,7 @@ class Db {
         $sql  =   $this->parseSql($this->selectSql,$options);
         $sql .= $this->parseLock(isset($options['lock'])?$options['lock']:false);
         if(isset($key)) { // 写入SQL创建缓存
-            S($key,$sql,0,'',array('length'=>C('DB_SQL_BUILD_LENGTH'),'queue'=>C('DB_SQL_BUILD_QUEUE')));
+            S($key,$sql,array('expire'=>0,'length'=>C('DB_SQL_BUILD_LENGTH'),'queue'=>C('DB_SQL_BUILD_QUEUE')));
         }
         return $sql;
     }
@@ -785,18 +839,19 @@ class Db {
      */
     public function parseSql($sql,$options=array()){
         $sql   = str_replace(
-            array('%TABLE%','%DISTINCT%','%FIELD%','%JOIN%','%WHERE%','%GROUP%','%HAVING%','%ORDER%','%LIMIT%','%UNION%'),
+            array('%TABLE%','%DISTINCT%','%FIELD%','%JOIN%','%WHERE%','%GROUP%','%HAVING%','%ORDER%','%LIMIT%','%UNION%','%COMMENT%'),
             array(
                 $this->parseTable($options['table']),
                 $this->parseDistinct(isset($options['distinct'])?$options['distinct']:false),
-                $this->parseField(isset($options['field'])?$options['field']:'*'),
-                $this->parseJoin(isset($options['join'])?$options['join']:''),
-                $this->parseWhere(isset($options['where'])?$options['where']:''),
-                $this->parseGroup(isset($options['group'])?$options['group']:''),
-                $this->parseHaving(isset($options['having'])?$options['having']:''),
-                $this->parseOrder(isset($options['order'])?$options['order']:''),
-                $this->parseLimit(isset($options['limit'])?$options['limit']:''),
-                $this->parseUnion(isset($options['union'])?$options['union']:'')
+                $this->parseField(!empty($options['field'])?$options['field']:'*'),
+                $this->parseJoin(!empty($options['join'])?$options['join']:''),
+                $this->parseWhere(!empty($options['where'])?$options['where']:''),
+                $this->parseGroup(!empty($options['group'])?$options['group']:''),
+                $this->parseHaving(!empty($options['having'])?$options['having']:''),
+                $this->parseOrder(!empty($options['order'])?$options['order']:''),
+                $this->parseLimit(!empty($options['limit'])?$options['limit']:''),
+                $this->parseUnion(!empty($options['union'])?$options['union']:''),
+                $this->parseComment(!empty($options['comment'])?$options['comment']:'')
             ),$sql);
         return $sql;
     }

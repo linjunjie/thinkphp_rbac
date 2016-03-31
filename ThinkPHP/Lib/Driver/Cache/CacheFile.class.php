@@ -20,25 +20,18 @@ defined('THINK_PATH') or exit();
 class CacheFile extends Cache {
 
     /**
-     * 缓存存储前缀
-     * @var string
-     * @access protected
-     */
-    protected $prefix   =   '~@';
-
-    /**
      * 架构函数
      * @access public
      */
-    public function __construct($options='') {
+    public function __construct($options=array()) {
         if(!empty($options)) {
             $this->options =  $options;
         }
-        $this->options['temp'] = !empty($options['temp'])?$options['temp']:C('DATA_CACHE_PATH');
-        $this->options['expire'] = isset($options['expire'])?$options['expire']:C('DATA_CACHE_TIME');
-        $this->options['length']  =  isset($options['length'])?$options['length']:0;
+        $this->options['temp']      =   !empty($options['temp'])?   $options['temp']    :   C('DATA_CACHE_PATH');
+        $this->options['prefix']    =   isset($options['prefix'])?  $options['prefix']  :   C('DATA_CACHE_PREFIX');
+        $this->options['expire']    =   isset($options['expire'])?  $options['expire']  :   C('DATA_CACHE_TIME');
+        $this->options['length']    =   isset($options['length'])?  $options['length']  :   0;
         if(substr($this->options['temp'], -1) != '/')    $this->options['temp'] .= '/';
-        $this->connected = is_dir($this->options['temp']) && is_writeable($this->options['temp']);
         $this->init();
     }
 
@@ -48,25 +41,10 @@ class CacheFile extends Cache {
      * @return boolen
      */
     private function init() {
-        $stat = stat($this->options['temp']);
-        $dir_perms = $stat['mode'] & 0007777; // Get the permission bits.
-        $file_perms = $dir_perms & 0000666; // Remove execute bits for files.
-
         // 创建项目缓存目录
         if (!is_dir($this->options['temp'])) {
-            if (!  mkdir($this->options['temp']))
-                return false;
-             chmod($this->options['temp'], $dir_perms);
+            mkdir($this->options['temp']);
         }
-    }
-
-    /**
-     * 是否连接
-     * @access public
-     * @return boolen
-     */
-    private function isConnected() {
-        return $this->connected;
     }
 
     /**
@@ -84,11 +62,11 @@ class CacheFile extends Cache {
                 $dir	.=	$name{$i}.'/';
             }
             if(!is_dir($this->options['temp'].$dir)) {
-                mkdir($this->options['temp'].$dir,0777,true);
+                mkdir($this->options['temp'].$dir,0755,true);
             }
-            $filename	=	$dir.$this->prefix.$name.'.php';
+            $filename	=	$dir.$this->options['prefix'].$name.'.php';
         }else{
-            $filename	=	$this->prefix.$name.'.php';
+            $filename	=	$this->options['prefix'].$name.'.php';
         }
         return $this->options['temp'].$filename;
     }
@@ -101,7 +79,7 @@ class CacheFile extends Cache {
      */
     public function get($name) {
         $filename   =   $this->filename($name);
-        if (!$this->isConnected() || !is_file($filename)) {
+        if (!is_file($filename)) {
            return false;
         }
         N('cache_read',1);
@@ -190,14 +168,17 @@ class CacheFile extends Cache {
      */
     public function clear() {
         $path   =  $this->options['temp'];
-        if ( $dir = opendir( $path ) ) {
-            while ( $file = readdir( $dir ) ) {
-                $check = is_dir( $file );
-                if ( !$check )
+        $files  =   scandir($path);
+        if($files){
+            foreach($files as $file){
+                if ($file != '.' && $file != '..' && is_dir($path.$file) ){
+                    array_map( 'unlink', glob( $path.$file.'/*.*' ) );
+                }elseif(is_file($path.$file)){
                     unlink( $path . $file );
+                }
             }
-            closedir( $dir );
             return true;
         }
+        return false;
     }
 }
