@@ -349,6 +349,15 @@ abstract class Controller
         // 执行后续操作
         Hook::listen('action_end');
     }
+
+    /**
+     * 获取当前Action名称
+     * 这是在从3.1.3版本升级到3.2.3版本时没有找到更好的办法的临时解决办法
+     * @access protected
+     */
+    protected function getActionName() {
+        return CONTROLLER_NAME;
+    }
 }
 // 设置控制器别名 便于升级
 class_alias('Think\Controller', 'Think\Action');
