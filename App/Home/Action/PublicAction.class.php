@@ -53,7 +53,7 @@ class PublicAction extends Action {
                     $accessList = $_SESSION['_ACCESS_LIST'];
                 }else{
                     import('@.ORG.Util.RBAC');
-                    $accessList =   RBAC::getAccessList($_SESSION[C('USER_AUTH_KEY')]);
+                    $accessList =   \Org\Util\RBAC::getAccessList($_SESSION[C('USER_AUTH_KEY')]);
                 }
                 foreach($list as $key=>$module) {
                      if(isset($accessList[strtoupper(APP_NAME)][strtoupper($module['name'])]) || $_SESSION['administrator']) {
@@ -141,7 +141,7 @@ class PublicAction extends Action {
             $this->error('验证码错误！');
         }
         import ( '@.ORG.Util.RBAC' );
-        $authInfo = RBAC::authenticate($map);
+        $authInfo = \Org\Util\RBAC::authenticate($map);
         //使用用户名、密码和状态的方式进行认证
         if(false === $authInfo) {
             $this->error('帐号不存在或已禁用！');
@@ -169,7 +169,7 @@ class PublicAction extends Action {
             $User->save($data);
 
             // 缓存访问权限
-            RBAC::saveAccessList();
+            \Org\Util\RBAC::saveAccessList();
             $this->success('登录成功！',__APP__.'/Index/index');
 
         }
@@ -210,7 +210,7 @@ class PublicAction extends Action {
     public function verify() {
         $type	 =	 isset($_GET['type'])?$_GET['type']:'gif';
         import("@.ORG.Util.Image");
-        Image::buildImageVerify(4,1,$type);
+        \Org\Util\Image::buildImageVerify(4,1,$type);
     }
 
     // 修改资料
