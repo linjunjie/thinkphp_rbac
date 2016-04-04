@@ -1,13 +1,17 @@
 # thinkphp_rbac
 
-ThinkPHP官方RBAC示例的完善版本，基本上是一个傻瓜版本
+##ThinkPHP官方RBAC示例的完善版本，基本上是一个傻瓜版本
 
-支持两个版本系的ThinkPHP:
+##支持两个版本系的ThinkPHP:
 
 1. verison 1.0.0 支持 3.1.x
 2. version 2.0.0 支持 3.2.x
 
-安装步骤:
+##请保持./App/Runtime目录可读写，我本地的方法为:
+
+sudo chown -R _www:_www Runtime
+
+##安装步骤:
 
 1. 登陆进入本地mysql库(假定用户名密码为默认的root和空):
 	mysql -uroot -hlocalhost
