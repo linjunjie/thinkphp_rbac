@@ -4,10 +4,10 @@
 
 ##支持两个版本系的ThinkPHP:
 
-1. verison 1.0.0 支持 3.1.x
-2. version 2.0.0 支持 3.2.x
+1. verison[tag] 1.0.0 支持 3.1.x
+2. version[tag] 2.0.0 支持 3.2.x
 
-##请保持./App/Runtime目录可读写，我本地的方法为:
+##如果没有.App/Runtime目录，请创建此目录，并确保./App/Runtime目录可读写，我本地的方法为:
 
 sudo chown -R _www:_www Runtime
 
@@ -20,4 +20,4 @@ sudo chown -R _www:_www Runtime
 
 3. 如果没有配置域名的话，可以先直接访问本地http://localhost/thinkphp_rbac
 
-4. 请确保thinkphp_rbac目录的用户和组为_www:_www(请与你所在的安装服务器的webserver用户组保持一致), 否则可能会有对App/runtime目录的读写权限问题, 方法为chown -R _www:_www thinkphp_rbac
+4. 请确保thinkphp_rbac目录的用户和组为_www:_www(请与你所在的安装服务器的webserver用户组保持一致), 否则可能会有对App/runtime目录的读写权限问题
