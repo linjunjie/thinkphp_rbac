@@ -141,6 +141,7 @@ class View
             // 视图解析标签
             $params = array('var' => $this->tVar, 'file' => $templateFile, 'content' => $content, 'prefix' => $prefix);
             Hook::listen('view_parse', $params);
+            
         }
         // 获取并清空缓存
         $content = ob_get_clean();

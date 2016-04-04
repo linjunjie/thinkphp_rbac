@@ -65,6 +65,7 @@ return array(
             'Behavior\ContentReplaceBehavior', // 模板输出替换
         ),
         'view_filter'     => array(
+            'Behavior\ContentReplaceBehavior', // 模板输出替换（发现3.2.3中，模板中的特殊变量还没有被替换就被写入静态缓存了，所以这里加入一次模板替换）
             'Behavior\WriteHtmlCacheBehavior', // 写入静态缓存
         ),
     ),
