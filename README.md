@@ -2,7 +2,10 @@
 
 ThinkPHP官方RBAC示例的完善版本，基本上是一个傻瓜版本
 
-使用的是ThinkPHP官方的3.1.3版本框架
+支持两个版本系的ThinkPHP:
+
+1. verison 1.0.0 支持 3.1.x
+2. version 2.0.0 支持 3.2.x
 
 安装步骤:
 
